@@ -3,7 +3,7 @@
 
 #ifndef FLATBUFFERS_GENERATED_API_IROHA_H_
 #define FLATBUFFERS_GENERATED_API_IROHA_H_
-
+#include <iostream>
 #include "flatbuffers/flatbuffers.h"
 
 namespace iroha {
@@ -147,6 +147,7 @@ struct ObjectUnion {
   ObjectUnion(const ObjectUnion &);
   ObjectUnion(ObjectUnion&&) = default;  
   ObjectUnion &operator=(const ObjectUnion &);
+  ObjectUnion &operator=(ObjectUnion&&) = default;
   ~ObjectUnion() { Reset(); }
 
   void Reset();
@@ -255,7 +256,9 @@ struct CommandUnion {
 
   CommandUnion() : type(Command_NONE), table(nullptr) {}
   CommandUnion(const CommandUnion &);
+  CommandUnion(CommandUnion&&) = default;
   CommandUnion &operator=(const CommandUnion &);
+  CommandUnion &operator=(CommandUnion&&) = default;
   ~CommandUnion() { Reset(); }
 
   void Reset();
@@ -1537,13 +1540,22 @@ inline flatbuffers::Offset<Transaction> CreateTransaction(
     flatbuffers::Offset<void> command = 0,
     flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<TxSignature>>> txSignatures = 0,
     flatbuffers::Offset<flatbuffers::String> hash = 0) {
+  std::cout << "inline flatbuffers::Offset<Transaction> CreateTransaction( 6 arguments )\n";
   TransactionBuilder builder_(_fbb);
+  std::cout << "builder_\n";
   builder_.add_hash(hash);
+  std::cout << "hash\n";
   builder_.add_txSignatures(txSignatures);
+  std::cout << "txSignatures\n";
   builder_.add_command(command);
+  std::cout << "command\n";
   builder_.add_sender(sender);
+  std::cout << "sender\n";
   builder_.add_command_type(command_type);
-  return builder_.Finish();
+  std::cout << "command_type\n";
+  auto xxx = builder_.Finish();
+  std::cout << "Finish\n";
+  return xxx;
 }
 
 inline flatbuffers::Offset<Transaction> CreateTransactionDirect(
@@ -2406,18 +2418,26 @@ inline flatbuffers::Offset<Transaction> Transaction::Pack(flatbuffers::FlatBuffe
 inline flatbuffers::Offset<Transaction> CreateTransaction(flatbuffers::FlatBufferBuilder &_fbb, const TransactionT *_o, const flatbuffers::rehasher_function_t *_rehasher) {
   (void)_rehasher;
   (void)_o;
+  std::cout << "inline flatbuffers::Offset<Transaction> CreateTransaction(flatbuffers::FlatBufferBuilder &_fbb, const TransactionT *_o, const flatbuffers::rehasher_function_t *_rehasher) {";
   auto _sender = _fbb.CreateString(_o->sender);
+  std::cout << "_sender\n";
   auto _command_type = _o->command.type;
+  std::cout << "_command_type\n";
   auto _command = _o->command.Pack(_fbb);
+  std::cout << "_command\n";
   auto _txSignatures = _fbb.CreateVector<flatbuffers::Offset<TxSignature>>(_o->txSignatures.size(), [&](size_t i) { return CreateTxSignature(_fbb, _o->txSignatures[i].get(), _rehasher); });
+  std::cout << "_txSignatures\n";
   auto _hash = _fbb.CreateString(_o->hash);
-  return CreateTransaction(
+  std::cout << "_hash\n";
+  auto xxx = CreateTransaction(
       _fbb,
       _sender,
       _command_type,
       _command,
       _txSignatures,
       _hash);
+  std::cout << "xxx\n";
+  return xxx;
 }
 
 inline ResponseT *Response::UnPack(const flatbuffers::resolver_function_t *_resolver) const {
@@ -2553,20 +2573,29 @@ inline void ConsensusEvent::UnPackTo(ConsensusEventT *_o, const flatbuffers::res
 }
 
 inline flatbuffers::Offset<ConsensusEvent> ConsensusEvent::Pack(flatbuffers::FlatBufferBuilder &_fbb, const ConsensusEventT* _o, const flatbuffers::rehasher_function_t *_rehasher) {
-  return CreateConsensusEvent(_fbb, _o, _rehasher);
+  std::cout << "flatbuffers::Offset<ConsensusEvent> ConsensusEvent::Pack(flatbuffers::FlatBufferBuilder \n";
+  auto xxx = CreateConsensusEvent(_fbb, _o, _rehasher);
+  std::cout << "CREATED flatbuffers::Offset<ConsensusEvent> ConsensusEvent::Pack(flatbuffers::FlatBufferBuilder \n";
+  return xxx;
 }
 
 inline flatbuffers::Offset<ConsensusEvent> CreateConsensusEvent(flatbuffers::FlatBufferBuilder &_fbb, const ConsensusEventT *_o, const flatbuffers::rehasher_function_t *_rehasher) {
   (void)_rehasher;
   (void)_o;
+  std::cout << "inline flatbuffers::Offset<ConsensusEvent> CreateConsensusEvent(flatbuffers::FlatBufferBuilder &_fbb, const ConsensusEventT *_o, const flatbuffers::rehasher_function_t *_rehasher) {\n";
   auto _transaction = _fbb.CreateVector<flatbuffers::Offset<Transaction>>(_o->transaction.size(), [&](size_t i) { return CreateTransaction(_fbb, _o->transaction[i].get(), _rehasher); });
+  std::cout << "_transaction\n";
   auto _eventSignatures = _o->eventSignatures.size() ? _fbb.CreateVector<flatbuffers::Offset<EventSignature>>(_o->eventSignatures.size(), [&](size_t i) { return CreateEventSignature(_fbb, _o->eventSignatures[i].get(), _rehasher); }) : 0;
+  std::cout << "_eventSignatures\n";
   auto _state = _o->state;
-  return CreateConsensusEvent(
+  std::cout << "_state\n";
+  auto xxx = CreateConsensusEvent(
       _fbb,
       _transaction,
       _eventSignatures,
       _state);
+  std::cout << "xxx\n";
+  return xxx;
 }
 
 inline bool VerifyObject(flatbuffers::Verifier &verifier, const void *obj, Object type) {

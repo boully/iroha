@@ -23,9 +23,16 @@ limitations under the License.
 #include "../../util/exception.hpp"
 #include "../config/peer_service_with_json.hpp"
 
+#include <iostream>
 #include <thread>
 
+#include <assert.h>
 #include <grpc++/grpc++.h>
+#include "flatbuffers/reflection.h"
+#include "flatbuffers/flatbuffers.h"
+#include "flatbuffers/idl.h"
+#include "flatbuffers/util.h"
+
 
 #include "../../../flatbuf/api_generated.h"
 #include "../../../flatbuf/api.grpc.fb.h"
@@ -161,12 +168,6 @@ namespace connection {
       return res;
     }
 
-    template<typename In,typename Out>
-    std::unique_ptr<Out> encodeFlatbufferT(const In& input){}
-
-    template<typename In,typename Out>
-    Out encodeFlatbufferUnionT(In&& input){}
-
     std::unique_ptr<iroha::BaseObjectT> encodeBaseObjectFlatbufferT(const std::string& name, const object::BaseObject& obj){
       std::unique_ptr<iroha::BaseObjectT> res(new iroha::BaseObjectT());
 
@@ -189,240 +190,149 @@ namespace connection {
       return std::move(res);
     }
 
-    ObjectUnion  encodeFlatbufferUnionT(const object::Object& obj){
-      ObjectUnion res;
-      if(obj.type == object::ObjectValueT::asset){
+    std::unique_ptr<ObjectUnion> encodeFlatbufferUnionT(const object::Object& obj) {
+
+      std::unique_ptr<ObjectUnion> res(new ObjectUnion());
+
+      if (obj.type == object::ObjectValueT::asset) {
         auto assetT = AssetT();
         assetT.domain = obj.asset->domain;
-        assetT.name = obj.asset->name;
-        for(auto&& o: obj.asset->value){
+        assetT.name   = obj.asset->name;
+        for (auto&& o: obj.asset->value) {
           assetT.objects.emplace_back(encodeBaseObjectFlatbufferT( o.first, o.second));
         }
-        res.Set(std::move(assetT));
-      }else if(obj.type == object::ObjectValueT::domain){
+        res->Set(std::move(assetT));
+      } else if (obj.type == object::ObjectValueT::domain) {
         auto domainT = DomainT();
         throw exception::NotImplementedException(
           "This domain is not implemented.",__FILE__
         );
-        res.Set(std::move(domainT));
-      }else if(obj.type == object::ObjectValueT::account){
+        res->Set(std::move(domainT));
+      } else if (obj.type == object::ObjectValueT::account) {
         auto accountT = AccountT();
         throw exception::NotImplementedException(
           "This domain is not implemented.",__FILE__
         );
-        res.Set(std::move(accountT));
-      }else if(obj.type == object::ObjectValueT::peer){
+        res->Set(std::move(accountT));
+      } else if (obj.type == object::ObjectValueT::peer) {
         auto peerT = PeerT();
         throw exception::NotImplementedException(
           "This domain is not implemented.",__FILE__
         );
-        res.Set(std::move(peerT));
-      }else{
+        res->Set(std::move(peerT));
+      } else {
         throw exception::NotImplementedException(
           "This object is not implemented.",__FILE__
         );
       }
+
       return res;
     }
 
-    CommandUnion encodeFlatbufferUnionT(const command::Command& command){
-      CommandUnion res;
-      if(command.getCommandType() == command::CommandValueT::add){
-          auto addT = AddT();
-          ObjectUnion obj = encodeFlatbufferUnionT(command.getObject());
-          if(obj.AsAsset() == nullptr){
-            if(obj.AsDomain() == nullptr){
-              if(obj.AsAccount() == nullptr){
-                if(obj.AsPeer() == nullptr){
-                  throw exception::NotImplementedException(
-                    "This object is not supported.",__FILE__
-                  );
-                }else{
-                  addT.object.Set(std::move(*obj.AsPeer()));
-                }
-              }else{
-                addT.object.Set(std::move(*obj.AsAccount()));
-              }
-            }else{
-              addT.object.Set(std::move(*obj.AsDomain()));
-            }
-          }else{
-            addT.object.Set(std::move(*obj.AsAsset()));
-          }
-          res.Set(std::move(addT));
+    template <class FBCommandT>
+    std::unique_ptr<CommandUnion> encodeFlatbufferUnionT(const command::Command& c) {
+      auto o = encodeFlatbufferUnionT(c.getObject()).release();
+      auto fbCommand = std::make_unique<FBCommandT>();
+      fbCommand->object = std::move(*o);
+      auto res = std::make_unique<CommandUnion>();
+      res->table = reinterpret_cast<flatbuffers::NativeTable *>(fbCommand.release());
+      return res;
+    }
 
-      }else if(command.getCommandType() == command::CommandValueT::transfer){
-            auto transferT = std::make_unique<TransferT>();
-            ObjectUnion obj = encodeFlatbufferUnionT(command.getObject());
-            if(obj.AsAsset() == nullptr){
-              if(obj.AsDomain() == nullptr){
-                if(obj.AsAccount() == nullptr){
-                  if(obj.AsPeer() == nullptr){
-                    throw exception::NotImplementedException(
-                      "This object is not supported.",__FILE__
-                    );
-                  }else{
-                    transferT->object.Set(std::move(*obj.AsPeer()));
-                  }
-                }else{
-                  transferT->object.Set(std::move(*obj.AsAccount()));
-                }
-              }else{
-                transferT->object.Set(std::move(*obj.AsDomain()));
-              }
-            }else{
-              transferT->object.Set(std::move(*obj.AsAsset()));
-            }
-            res.Set(std::move(*transferT));
+    std::unique_ptr<CommandUnion> encodeFlatbufferUnionT(const command::Command& c) {
 
-        }else if(command.getCommandType() == command::CommandValueT::update){
-            auto updateT = UpdateT();
+      const auto t = c.getCommandType();
 
-            ObjectUnion obj = encodeFlatbufferUnionT(command.getObject());
-            if(obj.AsAsset() == nullptr){
-              if(obj.AsDomain() == nullptr){
-                if(obj.AsAccount() == nullptr){
-                  if(obj.AsPeer() == nullptr){
-                    throw exception::NotImplementedException(
-                      "This object is not supported.",__FILE__
-                    );
-                  }else{
-                    updateT.object.Set(std::move(*obj.AsPeer()));
-                  }
-                }else{
-                  updateT.object.Set(std::move(*obj.AsAccount()));
-                }
-              }else{
-                updateT.object.Set(std::move(*obj.AsDomain()));
-              }
-            }else{
-              updateT.object.Set(std::move(*obj.AsAsset()));
-            }
-
-            res.Set(std::move(updateT));
-      }else if(command.getCommandType() == command::CommandValueT::remove){
-        auto removeT = RemoveT();
-        ObjectUnion obj = encodeFlatbufferUnionT(command.getObject());
-        if(obj.AsAsset() == nullptr){
-          if(obj.AsDomain() == nullptr){
-            if(obj.AsAccount() == nullptr){
-              if(obj.AsPeer() == nullptr){
-                throw exception::NotImplementedException(
-                  "This object is not supported.",__FILE__
-                );
-              }else{
-                removeT.object.Set(std::move(*obj.AsPeer()));
-              }
-            }else{
-              removeT.object.Set(std::move(*obj.AsAccount()));
-            }
-          }else{
-            removeT.object.Set(std::move(*obj.AsDomain()));
-          }
-        }else{
-          removeT.object.Set(std::move(*obj.AsAsset()));
+      switch (t) {
+        case command::CommandValueT::add: {
+          return encodeFlatbufferUnionT<AddT>(c);
         }
-        res.Set(std::move(removeT));
-      }else if(command.getCommandType() == command::CommandValueT::contract){
-        auto contractT = ContractT();
-        ObjectUnion obj = encodeFlatbufferUnionT(command.getObject());
-        if(obj.AsAsset() == nullptr){
-          if(obj.AsDomain() == nullptr){
-            if(obj.AsAccount() == nullptr){
-              if(obj.AsPeer() == nullptr){
-                throw exception::NotImplementedException(
-                  "This object is not supported.",__FILE__
-                );
-              }else{
-                contractT.object.Set(std::move(*obj.AsPeer()));
-              }
-            }else{
-              contractT.object.Set(std::move(*obj.AsAccount()));
-            }
-          }else{
-            contractT.object.Set(std::move(*obj.AsDomain()));
-          }
-        }else{
-          contractT.object.Set(std::move(*obj.AsAsset()));
+        case command::CommandValueT::transfer: {
+          return encodeFlatbufferUnionT<TransferT>(c);
         }
-        res.Set(std::move(contractT));
-      }else if(command.getCommandType() == command::CommandValueT::batch){
-        auto batchT = BatchT();
-        res.Set(std::move(batchT));
-      }else if(command.getCommandType() == command::CommandValueT::unbatch){
-        auto unbatchT = UnbatchT();
-        res.Set(std::move(unbatchT));
-      }else{
-        std::cout <<"comd "<< command::EnumNamesCommandValue(command.getCommandType()) << " ... "<< std::endl;
-        throw exception::NotImplementedException(
-          "This command is not implemented!",__FILE__
-        );
+        case command::CommandValueT::update: {
+          return encodeFlatbufferUnionT<UpdateT>(c);
+        }
+        case command::CommandValueT::remove: {
+          return encodeFlatbufferUnionT<RemoveT>(c);
+        }
+        case command::CommandValueT::contract: {
+          return encodeFlatbufferUnionT<ContractT>(c);
+        }
+        case command::CommandValueT::batch: {
+          throw exception::NotImplementedException(
+            "CommandValueT::batch is not implemented!",__FILE__
+          );
+//          return encodeFlatbufferUnionT<BatchT>(c);
+        }
+        case command::CommandValueT::unbatch: {
+          throw exception::NotImplementedException(
+            "CommandValueT::unbatch is not implemented!",__FILE__
+          );
+//          return encodeFlatbufferUnionT<UnbatchT>(c);
+        }
+        default: {
+          std::cout << "command: "<< command::EnumNamesCommandValue(c.getCommandType()) << " ... " << std::endl;
+          throw exception::NotImplementedException(
+            "This command is not implemented!",__FILE__
+          );
+        }
       }
-      return res;
     }
 
-    std::unique_ptr<iroha::TransactionT>   encodeFlatbufferT(const event::Transaction& tx){
+    std::unique_ptr<iroha::TransactionT> encodeFlatbufferT(const event::Transaction& tx){
       std::cout << "\033[95m Tx event::Transaction \033[0m "<< tx.senderPublicKey << std::endl;
       std::unique_ptr<iroha::TransactionT> res(new iroha::TransactionT());
+
       res->sender = tx.senderPublicKey;
       res->hash   = tx.hash;
 
       std::vector<std::unique_ptr<TxSignatureT>> tsTv;
-      for(auto&& t: tx.txSignatures()){
+      for (const auto& t: tx.txSignatures()){
         auto ts = std::make_unique<TxSignatureT>();
         ts->publicKey = std::move(t.publicKey);
         ts->signature = std::move(t.signature);
         res->txSignatures.push_back( std::move(ts) );
         std::cout << "loop txSignatures\n";
       }
+
       {
-        auto command = encodeFlatbufferUnionT(tx.command);
-        if(command.AsAdd()             != nullptr){
-          std::cout << "+++++++++++++++++++ Move Add\n";
-          res->command.Set(std::move(*command.AsAdd()));
-          std::cout << "+++++++++++++++++++ Moved Add\n";
-        }else if(command.AsBatch()     != nullptr){
-          res->command.Set(std::move(*command.AsBatch()));
-        }else if(command.AsContract()  != nullptr){
-          res->command.Set(std::move(*command.AsContract()));
-        }else if(command.AsRemove()    != nullptr){
-          res->command.Set(std::move(*command.AsRemove()));
-        }else if(command.AsTransfer()  != nullptr){
-          res->command.Set(std::move(*command.AsTransfer()));
-        }else if(command.AsUnbatch()   != nullptr){
-          res->command.Set(std::move(*command.AsUnbatch()));
-        }else if(command.AsUpdate()    != nullptr){
-          res->command.Set(std::move(*command.AsUpdate()));
-        }else{
-          throw exception::NotImplementedException(
-            "This object is not implemented.",__FILE__
-          );
+        CommandUnion* command = encodeFlatbufferUnionT(tx.command).release();
+        res->command = std::move(*command);
+      }
+
+      if (res->command.AsAdd() != nullptr) {
+        if (res->command.AsAdd()->object.AsAsset() != nullptr) {
+          std::cout << res->command.AsAdd()->object.AsAsset()->name << std::endl;
         }
       }
-      return std::move(res);
+
+      return res;
     }
 
     std::unique_ptr<iroha::ConsensusEventT> encodeFlatbufferT(const event::ConsensusEvent& event){
         std::unique_ptr<iroha::ConsensusEventT> res(new iroha::ConsensusEventT());
 
         std::cout <<"consensus command ";
-        for(auto&& tx: event.transactions){
-          std::cout << "\033[95m Tx move \033[0m "<< tx.senderPublicKey << std::endl;
-          res->transaction.emplace_back(encodeFlatbufferT(std::move(tx)));
-        }
-        std::cout <<"event.transactions end\n";
 
+        for(const auto& tx: event.transactions){
+          std::cout << "\033[95m Tx move \033[0m "<< tx.senderPublicKey << std::endl;
+          res->transaction.emplace_back(encodeFlatbufferT(tx));
+        }
+
+        std::cout <<"event.transactions end\n";
         std::cout <<"event.eventSignatures start\n";
+
         for(auto&& e: event.eventSignatures()){
           std::unique_ptr<EventSignatureT> es(new EventSignatureT());
           es->publicKey = e.publicKey;
           es->signature = e.signature;
-          res->eventSignatures.emplace_back( std::move(es) );
+          res->eventSignatures.push_back( std::move(es) );
         }
         std::cout <<"event.eventSignatures end\n";
         std::cout <<"moved\n";
         res->state = State::State_Undetermined;
-        return std::move(res);
+        return res;
     }
 
 
@@ -510,6 +420,7 @@ namespace connection {
               fbb.GetBufferPointer(),
               fbb.GetSize()
             );
+
             flatbuffers::BufferRef<Response> response;
 
             auto status = stub->Verify(&context, request, &response);
@@ -543,7 +454,7 @@ namespace connection {
         const std::string&,
         event::ConsensusEvent&
       )>& callback) {
-        receivers.push_back(std::move(callback));
+        receivers.puf_back(std::move(callback));
         return true;
     }
 
