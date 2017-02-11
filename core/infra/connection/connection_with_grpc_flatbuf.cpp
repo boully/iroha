@@ -454,7 +454,7 @@ namespace connection {
         const std::string&,
         event::ConsensusEvent&
       )>& callback) {
-        receivers.puf_back(std::move(callback));
+        receivers.push_back(std::move(callback));
         return true;
     }
 
