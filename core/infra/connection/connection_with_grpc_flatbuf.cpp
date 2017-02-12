@@ -50,268 +50,389 @@ namespace connection {
           return 0;
     });
 
-    template<typename In,typename Out>
-    Out decodeFlatbufferT(In& input){}
+    namespace convertor {
 
-    std::pair<std::string, object::BaseObject> decodeFlatbufferT(iroha::BaseObjectT& obj){
-      switch (obj.type) {
-        case BaseObjectType::BaseObjectType_Text:{
-          return std::make_pair( obj.name, object::BaseObject(obj.text));
-        }
-        case BaseObjectType::BaseObjectType_Integer:{
-          return std::make_pair( obj.name, object::BaseObject(obj.integer));
-        }
-        case BaseObjectType::BaseObjectType_Boolean: {
-          return std::make_pair( obj.name, object::BaseObject(obj.boolean));
-        }
-        case BaseObjectType::BaseObjectType_Decimal: {
-          return std::make_pair( obj.name, object::BaseObject(obj.decimal));
-        }
-        default:{
-          throw exception::NotImplementedException(
-            "This BaseObject type is not implemented.",__FILE__
-          );
-        }
-      }
-    }
-
-    object::Object decodeFlatbufferT(ObjectUnion& u){
-      switch(u.type){
-        case Object::Object_Asset:{
-          auto asset = object::Asset();
-          asset.domain = u.AsAsset()->domain;
-          asset.name   = u.AsAsset()->name;
-          for(auto&& o: u.AsAsset()->objects){
-            asset.value.insert( decodeFlatbufferT(*o) );
+      std::pair<std::string, object::BaseObject> decodeObject(iroha::BaseObjectT& obj) {
+        switch (obj.type) {
+          case BaseObjectType::BaseObjectType_Text:{
+            return std::make_pair( obj.name, object::BaseObject(obj.text));
           }
-          return object::Object(asset);
+          case BaseObjectType::BaseObjectType_Integer:{
+            return std::make_pair( obj.name, object::BaseObject(obj.integer));
+          }
+          case BaseObjectType::BaseObjectType_Boolean: {
+            return std::make_pair( obj.name, object::BaseObject(obj.boolean));
+          }
+          case BaseObjectType::BaseObjectType_Decimal: {
+            return std::make_pair( obj.name, object::BaseObject(obj.decimal));
+          }
+          default:{
+            throw exception::NotImplementedException(
+              "This BaseObject type is not implemented.",__FILE__
+            );
+          }
         }
-        case Object::Object_Domain:{
+      }
+
+      object::Object decodeObject(ObjectUnion& u) {
+        switch (u.type) {
+          case Object::Object_Asset:{
+            auto asset = object::Asset();
+            asset.domain = u.AsAsset()->domain;
+            asset.name   = u.AsAsset()->name;
+            for (std::size_t i = 0; i < u.AsAsset()->objects.size(); i++) {
+              auto o = *u.AsAsset()->objects[i];
+              asset.value.insert(decodeObject(o));
+            }
+            return object::Object(asset);
+          }
+          case Object::Object_Domain:{
+              throw exception::NotImplementedException(
+                "This Object type is not implemented.",__FILE__
+              );
+          }
+          case Object::Object_Account:{
+              throw exception::NotImplementedException(
+                "This Object type is not implemented.",__FILE__
+              );
+          }
+          case Object::Object_Peer:{
+              throw exception::NotImplementedException(
+                "This Object type is not implemented.",__FILE__
+              );
+          }
+          default:{
             throw exception::NotImplementedException(
               "This Object type is not implemented.",__FILE__
             );
+          }
         }
-        case Object::Object_Account:{
-            throw exception::NotImplementedException(
-              "This Object type is not implemented.",__FILE__
-            );
+      }
+
+      command::Command decodeCommand(CommandUnion& u) {
+        switch(u.type){
+          case Command::Command_Add:{
+            auto object = decodeObject(u.AsAdd()->object);
+            return command::Command(command::Add(object));
+          }
+          case Command::Command_Transfer:{
+            auto object = decodeObject(u.AsTransfer()->object);
+            return command::Command(command::Transfer(object,u.AsTransfer()->receiver));
+          }
+          case Command::Command_Contract:{
+            auto object = decodeObject(u.AsContract()->object);
+            return command::Command(command::Contract(object,u.AsContract()->contractName));
+          }
+          case Command::Command_Remove:{
+            auto object = decodeObject(u.AsRemove()->object);
+            return command::Command(command::Remove(object));
+          }
+          case Command::Command_Batch:{
+            throw exception::NotImplementedException("decodeCommand: Command_Batch", __FILE__);
+//            return command::Command(command::Batch());
+          }
+          case Command::Command_Unbatch:{
+            throw exception::NotImplementedException("decodeCommand: Command_Unbatch", __FILE__);
+//            return command::Command(command::Unbatch());
+          }
+          case Command::Command_Update:{
+            auto object = decodeObject(u.AsUpdate()->object);
+            return command::Command(command::Update(object));
+          }
+          default:{
+          }
         }
-        case Object::Object_Peer:{
-            throw exception::NotImplementedException(
-              "This Object type is not implemented.",__FILE__
-            );
-        }
-        default:{
+      }
+
+      event::Transaction decodeTransaction(TransactionT& u) {
+        event::Transaction res;
+        std::cout << "NOT IMPLEMENTED decodeTransaction(TransactionT)\n";
+        return res;
+      }
+
+      event::ConsensusEvent decodeConsensusEvent(ConsensusEventT& u) {
+        if(u.transaction.empty()){
           throw exception::NotImplementedException(
-            "This Object type is not implemented.",__FILE__
+            "Multi transaction supporting is not implemented.",__FILE__
           );
         }
+        event::ConsensusEvent res( std::move(decodeTransaction(*u.transaction.at(0))) );
+        for(auto&& esig: u.eventSignatures){
+          res.addEventSignature(std::move(esig->publicKey),std::move(esig->signature));
+        }
+        return res;
       }
-    }
 
-    command::Command decodeFlatbufferT(CommandUnion& u){
-      switch(u.type){
-        case Command::Command_Add:{
-          auto object = decodeFlatbufferT(u.AsAdd()->object);
-          return command::Command(command::Add(object));
+      std::unique_ptr<iroha::BaseObjectT> encodeBaseObject(const std::string& name, const object::BaseObject& obj){
+        std::unique_ptr<iroha::BaseObjectT> res(new iroha::BaseObjectT());
+
+        res->name = name;
+        res->text = "";res->integer = 0;res->boolean = false;res->decimal = 0.0f;
+
+        if(obj.object_type == object::BaseObject::Object_type::STRING){
+          res->type     = BaseObjectType::BaseObjectType_Text;
+          res->text     = (std::string)obj;
+          std::cout << "(std::string)obj" << (std::string)obj << ", " << res->text << std::endl;
+        }else if(obj.object_type == object::BaseObject::Object_type::INTEGER){
+          res->type     = BaseObjectType::BaseObjectType_Integer;
+          res->integer  = (int)obj;
+          std::cout << "(int)obj" << (int)obj << ", " << res->integer << std::endl;
+        }else if(obj.object_type == object::BaseObject::Object_type::BOOLEAN){
+          res->type     = BaseObjectType::BaseObjectType_Boolean;
+          res->boolean  = (bool)obj;
+          std::cout << "(bool)obj" << (bool)obj << ", " << res->boolean << std::endl;
+        }else if(obj.object_type == object::BaseObject::Object_type::FLOAT){
+          res->type     = BaseObjectType::BaseObjectType_Decimal;
+          res->decimal  = (float)obj;
+          std::cout << "(float)obj" << (float)obj << ", " << res->decimal << std::endl;
+        }else{
+          throw exception::NotImplementedException(
+            "This base object type is not implemented.",__FILE__
+          );
         }
-        case Command::Command_Transfer:{
-          auto object = decodeFlatbufferT(u.AsTransfer()->object);
-          return command::Command(command::Transfer(object,u.AsTransfer()->receiver));
-        }
-        case Command::Command_Contract:{
-          auto object = decodeFlatbufferT(u.AsContract()->object);
-          return command::Command(command::Contract(object,u.AsContract()->contractName));
-        }
-        case Command::Command_Remove:{
-          auto object = decodeFlatbufferT(u.AsRemove()->object);
-          return command::Command(command::Remove(object));
-        }
-        case Command::Command_Batch:{
-          return command::Command(command::Batch());
-        }
-        case Command::Command_Unbatch:{
-          return command::Command(command::Unbatch());
-        }
-        case Command::Command_Update:{
-          auto object = decodeFlatbufferT(u.AsUpdate()->object);
-          return command::Command(command::Update(object));
-        }
-        default:{
-        }
+        return res;
       }
-    }
 
-    event::Transaction decodeFlatbufferT(TransactionT& u){
-      event::Transaction res;
+      std::unique_ptr<ObjectUnion> encodeObject(const object::Object& obj) {
+        if(obj.type == object::ObjectValueT::asset){
+          auto assetT = AssetT();
+          assetT.domain = obj.asset->domain;
+          assetT.name   = obj.asset->name;
+          std::cout << "----------------------------------------------------------------------------\n";
+          std::cout << "assetT.domain = " << assetT.domain  << std::endl;
+          std::cout << "assetT.name = "   << assetT.name    << std::endl;
+          for (const auto& o: obj.asset->value) {
 
-      return res;
-    }
+            // Verify valid object.
+            {
+              std::cout << o.first << std::endl;
+              if(o.second.object_type == object::BaseObject::Object_type::STRING){
+                std::cout << (std::string)o.second << std::endl;
+              }else if(o.second.object_type == object::BaseObject::Object_type::INTEGER){
+                std::cout << (int)o.second << std::endl;
+              }else if(o.second.object_type == object::BaseObject::Object_type::BOOLEAN){
+                std::cout << (bool)o.second << std::endl;
+              }else if(o.second.object_type == object::BaseObject::Object_type::FLOAT){
+                std::cout << (float)o.second << std::endl;
+              }else{
+                throw exception::NotImplementedException(
+                  "This base object type is not implemented.",__FILE__
+                );
+              }
+            }
 
-    event::ConsensusEvent decodeFlatbufferT(ConsensusEventT& u){
-      if(u.transaction.empty()){
-        throw exception::NotImplementedException(
-          "Multi transaction supporting is not implemented.",__FILE__
-        );
-      }
-      event::ConsensusEvent res( std::move(decodeFlatbufferT(*u.transaction.at(0))) );
-      for(auto&& esig: u.eventSignatures){
-        res.addEventSignature(std::move(esig->publicKey),std::move(esig->signature));
-      }
-      return res;
-    }
+            // Pack.
+            assetT.objects.emplace_back(encodeBaseObject(o.first, o.second));
 
-    template<typename In,typename Out>
-    std::unique_ptr<Out> encodeFlatbufferT(const In& input){}
+            // Verify successful packing.
+            std::cout << "--------------- BEGIN VERIFY encoded ObjectT ---------------\n";
+            {
+              for (const auto& e: assetT.objects) {
+                if(e->type == BaseObjectType::BaseObjectType_Text){
+                  std::cout << e->text << std::endl;
+                }else if(e->type == BaseObjectType::BaseObjectType_Integer){
+                  std::cout << e->integer << std::endl;
+                }else if(e->type == BaseObjectType::BaseObjectType_Boolean){
+                  std::cout << e->boolean << std::endl;
+                }else if(e->type == BaseObjectType::BaseObjectType_Decimal){
+                  std::cout << e->decimal << std::endl;
+                }else{
+                  throw exception::NotImplementedException(
+                    "This base object type is not implemented.",__FILE__
+                  );
+                }
+              }
+            }
+            std::cout << "--------------- END VERIFY encoded ObjectT ---------------\n";
 
-    template<typename In,typename Out>
-    Out encodeFlatbufferUnionT(In&& input){}
 
-    std::unique_ptr<iroha::BaseObjectT> encodeBaseObjectFlatbufferT(const std::string& name, const object::BaseObject& obj){
-      std::unique_ptr<iroha::BaseObjectT> res(new iroha::BaseObjectT());
+          }
 
-      res->name = name;
-      res->text = "";res->integer = 0;res->boolean = false;res->decimal = 0.0f;
-
-      if(obj.object_type == object::BaseObject::Object_type::STRING){
-        res->text     = (std::string)obj;
-      }else if(obj.object_type == object::BaseObject::Object_type::INTEGER){
-        res->integer  = (int)obj;
-      }else if(obj.object_type == object::BaseObject::Object_type::BOOLEAN){
-        res->boolean  = (bool)obj;
-      }else if(obj.object_type == object::BaseObject::Object_type::FLOAT){
-        res->decimal  = (float)obj;
-      }else{
-        throw exception::NotImplementedException(
-          "This base object type is not implemented.",__FILE__
-        );
-      }
-      return std::move(res);
-    }
-
-    std::unique_ptr<ObjectUnion>  encodeFlatbufferUnionT(const object::Object& obj){
-      if(obj.type == object::ObjectValueT::asset){
-        auto assetT = AssetT();
-        assetT.domain = obj.asset->domain;
-        assetT.name = obj.asset->name;
-        for(auto&& o: obj.asset->value){
-          assetT.objects.emplace_back(encodeBaseObjectFlatbufferT( o.first, o.second));
+          return std::make_unique<ObjectUnion>(std::move(assetT));
         }
-        return std::make_unique<ObjectUnion>(std::move(assetT));
+  /*
+        else if(obj.type == object::ObjectValueT::domain){
+          auto domainT = DomainT();
+          throw exception::NotImplementedException(
+            "This domain is not implemented.",__FILE__
+          );
+          res->Set(std::move(domainT));
+        }else if(obj.type == object::ObjectValueT::account){
+          auto accountT = AccountT();
+          throw exception::NotImplementedException(
+            "This domain is not implemented.",__FILE__
+          );
+          res->Set(std::move(accountT));
+        }else if(obj.type == object::ObjectValueT::peer){
+          auto peerT = PeerT();
+          throw exception::NotImplementedException(
+            "This domain is not implemented.",__FILE__
+          );
+          res->Set(std::move(peerT));
+        }else{
+          throw exception::NotImplementedException(
+            "This object is not implemented.",__FILE__
+          );
+        }
+  */
       }
-/*
-      else if(obj.type == object::ObjectValueT::domain){
-        auto domainT = DomainT();
-        throw exception::NotImplementedException(
-          "This domain is not implemented.",__FILE__
-        );
-        res->Set(std::move(domainT));
-      }else if(obj.type == object::ObjectValueT::account){
-        auto accountT = AccountT();
-        throw exception::NotImplementedException(
-          "This domain is not implemented.",__FILE__
-        );
-        res->Set(std::move(accountT));
-      }else if(obj.type == object::ObjectValueT::peer){
-        auto peerT = PeerT();
-        throw exception::NotImplementedException(
-          "This domain is not implemented.",__FILE__
-        );
-        res->Set(std::move(peerT));
-      }else{
-        throw exception::NotImplementedException(
-          "This object is not implemented.",__FILE__
-        );
-      }
-*/
-    }
 
-    std::unique_ptr<CommandUnion> encodeFlatbufferUnionT(const command::Command& command){
-      if(command.getCommandType() == command::CommandValueT::add){
-          auto addT = std::make_unique<AddT>();
-          addT->object = std::move(*encodeFlatbufferUnionT(command.getObject()).release());
-          return std::make_unique<CommandUnion>(std::move(*addT));
-      }
-/*
-      }else if(command.getCommandType() == command::CommandValueT::transfer){
-          auto transferT = std::make_unique<TransferT>();
+      std::unique_ptr<CommandUnion> encodeCommand(const command::Command& command) {
+        if(command.getCommandType() == command::CommandValueT::add){
+
+            // Pack
+            auto addT = AddT();
+            auto objectUnionPtr = encodeObject(command.getObject()).release(); // UnionObjectはenumの型typeが定まり、実態がある状態
+            addT.object = ObjectUnion(std::move(*objectUnionPtr));
+
+            // Verify
+            std::cout << "--------------- BEGIN VERIFY encodeCommand ---------------\n";
+            {
+              auto const& e = addT.object;
+              if(e.type == Object::Object_Asset){
+                auto p = reinterpret_cast<AssetT *>(e.table);
+                std::cout << p->domain << std::endl;
+                std::cout << p->name << std::endl;
+              }else if(e.type == Object::Object_Domain){
+                auto p = reinterpret_cast<DomainT *>(e.table);
+              }else if(e.type == Object::Object_Account){
+                auto p = reinterpret_cast<AccountT *>(e.table);
+              }else if(e.type == Object::Object_Peer){
+                auto p = reinterpret_cast<PeerT *>(e.table);
+              }else{
+                throw exception::NotImplementedException(
+                  "This base object type is not implemented.",__FILE__
+                );
+              }
+            }
+            std::cout << "--------------- END VERIFY encodeCommand ---------------\n";
+
+            return std::make_unique<CommandUnion>(std::move(addT));
+        }
+  /*
+        }else if(command.getCommandType() == command::CommandValueT::transfer){
+            auto transferT = std::make_unique<TransferT>();
+            ObjectUnion* obj = encodeFlatbufferUnionT(command.getObject()).release();
+            transferT->object = std::move(*obj);
+            res->Set(std::move(*transferT));
+        }else if(command.getCommandType() == command::CommandValueT::update){
+            auto updateT = UpdateT();
+            ObjectUnion* obj = encodeFlatbufferUnionT(command.getObject()).release();
+            updateT->object = std::move(*obj);
+            res->Set(std::move(updateT));
+        }else if(command.getCommandType() == command::CommandValueT::remove){
+          auto removeT = RemoveT();
           ObjectUnion* obj = encodeFlatbufferUnionT(command.getObject()).release();
-          transferT->object = std::move(*obj);
-          res->Set(std::move(*transferT));
-      }else if(command.getCommandType() == command::CommandValueT::update){
-          auto updateT = UpdateT();
-          ObjectUnion* obj = encodeFlatbufferUnionT(command.getObject()).release();
-          updateT->object = std::move(*obj);
-          res->Set(std::move(updateT));
-      }else if(command.getCommandType() == command::CommandValueT::remove){
-        auto removeT = RemoveT();
-        ObjectUnion* obj = encodeFlatbufferUnionT(command.getObject()).release();
-        removeT->object = std::move(*obj);
-        res->Set(std::move(removeT));
-      }else if(command.getCommandType() == command::CommandValueT::contract){
-        auto contractT = ContractT();
-        ObjectUnion obj = encodeFlatbufferUnionT(command.getObject());
-        contractT->object = std::move(*obj);
-        res->Set(std::move(contractT));
-      }else if(command.getCommandType() == command::CommandValueT::batch){
-        auto batchT = BatchT();
-        res->Set(std::move(batchT));
-      }else if(command.getCommandType() == command::CommandValueT::unbatch){
-        auto unbatchT = UnbatchT();
-        res->Set(std::move(unbatchT));
-      }else{
-        std::cout <<"comd "<< command::EnumNamesCommandValue(command.getCommandType()) << " ... "<< std::endl;
-        throw exception::NotImplementedException(
-          "This command is not implemented!",__FILE__
-        );
-      }
-*/
-    }
-
-    std::unique_ptr<iroha::TransactionT>   encodeFlatbufferT(const event::Transaction& tx){
-      std::cout << "\033[95m Tx event::Transaction \033[0m "<< tx.senderPublicKey << std::endl;
-      std::unique_ptr<iroha::TransactionT> res(new iroha::TransactionT());
-      res->sender = tx.senderPublicKey;
-      res->hash   = tx.hash;
-
-      std::vector<std::unique_ptr<TxSignatureT>> tsTv;
-      for(auto&& t: tx.txSignatures()){
-        auto ts = std::make_unique<TxSignatureT>();
-        ts->publicKey = std::move(t.publicKey);
-        ts->signature = std::move(t.signature);
-        res->txSignatures.push_back( std::move(ts) );
-        std::cout << "loop txSignatures\n";
-      }
-      {
-        CommandUnion* command = encodeFlatbufferUnionT(tx.command).release();
-        res->command = std::move(*command);
-      }
-      return std::move(res);
-    }
-
-    std::unique_ptr<iroha::ConsensusEventT> encodeFlatbufferT(const event::ConsensusEvent& event){
-        std::unique_ptr<iroha::ConsensusEventT> res(new iroha::ConsensusEventT());
-
-        std::cout <<"consensus command ";
-        for(auto&& tx: event.transactions){
-          std::cout << "\033[95m Tx move \033[0m "<< tx.senderPublicKey << std::endl;
-          res->transaction.emplace_back(encodeFlatbufferT(std::move(tx)));
+          removeT->object = std::move(*obj);
+          res->Set(std::move(removeT));
+        }else if(command.getCommandType() == command::CommandValueT::contract){
+          auto contractT = ContractT();
+          ObjectUnion obj = encodeFlatbufferUnionT(command.getObject());
+          contractT->object = std::move(*obj);
+          res->Set(std::move(contractT));
+        }else if(command.getCommandType() == command::CommandValueT::batch){
+          auto batchT = BatchT();
+          res->Set(std::move(batchT));
+        }else if(command.getCommandType() == command::CommandValueT::unbatch){
+          auto unbatchT = UnbatchT();
+          res->Set(std::move(unbatchT));
+        }else{
+          std::cout <<"comd "<< command::EnumNamesCommandValue(command.getCommandType()) << " ... "<< std::endl;
+          throw exception::NotImplementedException(
+            "This command is not implemented!",__FILE__
+          );
         }
-        std::cout <<"event.transactions end\n";
+  */
+      }
 
-        std::cout <<"event.eventSignatures start\n";
-        for(auto&& e: event.eventSignatures()){
-          std::unique_ptr<EventSignatureT> es(new EventSignatureT());
-          es->publicKey = e.publicKey;
-          es->signature = e.signature;
-          res->eventSignatures.emplace_back( std::move(es) );
+      std::unique_ptr<iroha::TransactionT> encodeTransaction(const event::Transaction& tx) {
+        std::cout << "\033[95m Tx event::Transaction \033[0m "<< tx.senderPublicKey << std::endl;
+        std::unique_ptr<iroha::TransactionT> res(new iroha::TransactionT());  // HogeT does not have ctor(T&&)
+        res->sender = tx.senderPublicKey;
+        res->hash   = tx.hash;
+
+        std::vector<std::unique_ptr<TxSignatureT>> tsTv;
+        for(const auto& t: tx.txSignatures()){
+          auto ts = std::make_unique<TxSignatureT>();
+          ts->publicKey = t.publicKey;
+          ts->signature = t.signature;
+          res->txSignatures.push_back( std::move(ts) );
+          std::cout << "res->txSignatures.back()->publicKey = " << res->txSignatures.back()->publicKey << "\n";
+          std::cout << "loop txSignatures\n";
         }
-        std::cout <<"event.eventSignatures end\n";
-        std::cout <<"moved\n";
-        res->state = State::State_Undetermined;
-        return std::move(res);
-    }
 
+        auto commandUnionPtr = encodeCommand(tx.command).release();
+        res->command = std::move(*commandUnionPtr);
+
+        // Verify
+        std::cout << "--------------- BEGIN VERIFY encodeTransaction ---------------\n";
+        {
+          auto const& e = res->command;
+          if(e.type == Command::Command_Add){
+            auto p = reinterpret_cast<AddT *>(e.table);
+
+
+            std::cout << "--------------- BEGIN VERIFY union in union ---------------\n";
+            {
+              auto const& e = p->object;
+              if(e.type == Object::Object_Asset){
+                auto p = reinterpret_cast<AssetT *>(e.table);
+                std::cout << p->domain << std::endl;
+                std::cout << p->name << std::endl;
+              }else if(e.type == Object::Object_Domain){
+                auto p = reinterpret_cast<DomainT *>(e.table);
+              }else if(e.type == Object::Object_Account){
+                auto p = reinterpret_cast<AccountT *>(e.table);
+              }else if(e.type == Object::Object_Peer){
+                auto p = reinterpret_cast<PeerT *>(e.table);
+              }else{
+                throw exception::NotImplementedException(
+                  "This base object type is not implemented.",__FILE__
+                );
+              }
+            }
+            std::cout << "--------------- END VERIFY union in union ---------------\n";
+
+          }else if(e.type == Command::Command_Transfer){
+            auto p = reinterpret_cast<TransferT *>(e.table);
+          }else if(e.type == Command::Command_Update){
+            auto p = reinterpret_cast<UpdateT *>(e.table);
+          }else if(e.type == Command::Command_Remove){
+            auto p = reinterpret_cast<RemoveT *>(e.table);
+          }else{
+            throw exception::NotImplementedException(
+              "This base object type is not implemented.",__FILE__
+            );
+          }
+        }
+        std::cout << "--------------- END VERIFY encodeTransaction ---------------\n";
+
+        return res;
+      }
+
+      std::unique_ptr<iroha::ConsensusEventT> encodeConsensusEvent(const event::ConsensusEvent& event){
+          std::unique_ptr<iroha::ConsensusEventT> res(new iroha::ConsensusEventT());
+
+          std::cout <<"consensus command ";
+          for(const auto& tx: event.transactions){
+            std::cout << "\033[95m Tx move \033[0m "<< tx.senderPublicKey << std::endl;
+            res->transaction.emplace_back(encodeTransaction(tx));
+          }
+          std::cout <<"event.transactions end\n";
+
+          std::cout <<"event.eventSignatures start\n";
+          for(const auto& e: event.eventSignatures()){
+            std::unique_ptr<EventSignatureT> es(new EventSignatureT());
+            es->publicKey = e.publicKey;
+            es->signature = e.signature;
+            res->eventSignatures.emplace_back( std::move(es) );
+          }
+          std::cout <<"event.eventSignatures end\n";
+          std::cout <<"moved\n";
+          res->state = State::State_Undetermined;
+          return std::move(res);
+      }
+    }
 
     class IrohaServiceImpl final : public Sumeragi::Service {
         flatbuffers::FlatBufferBuilder fbb_;
@@ -337,7 +458,7 @@ namespace connection {
         //ConsensusEventT *UnPack(const flatbuffers::resolver_function_t *_resolver = nullptr) const;
         //void UnPackTo(ConsensusEventT *_o, const flatbuffers::resolver_function_t *_resolver = nullptr) const;
         std::cout<< "Recv \n";
-        auto event = decodeFlatbufferT(*request.GetRoot()->UnPack());
+        auto event = convertor::decodeConsensusEvent(*request.GetRoot()->UnPack());
 
         fbb_.Clear();
         auto stat_offset = CreateResponse(fbb_,
@@ -392,7 +513,16 @@ namespace connection {
             grpc::ClientContext context;
             iroha::ConsensusEventT eventT;
             flatbuffers::FlatBufferBuilder fbb;
-            fbb.Finish(iroha::ConsensusEvent::Pack( fbb, encodeFlatbufferT(event).get()));
+            std::cout << "ININININININININ\n";
+            auto uptr = convertor::encodeConsensusEvent(event);
+            /*
+            auto eventSignatures = uptr->eventSignatures;
+            for (auto&& e: eventSignatures) {
+
+            }
+            */
+            fbb.Finish(iroha::ConsensusEvent::Pack( fbb, uptr.release()));
+            std::cout << "OUTOUOTUOUTOUTOUTOUTUOT\n";
             auto request = flatbuffers::BufferRef<iroha::ConsensusEvent>(
               fbb.GetBufferPointer(),
               fbb.GetSize()
